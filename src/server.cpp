@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <poll.h>
 
 #include <cerrno>
 #include <cstring>
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <algorithm>
 #include <string>
+#include <chrono>
 
 namespace {
 
@@ -58,7 +60,6 @@ Socket createListeningSocket(std::uint16_t port) {
 		);
 	}
 
-	
 	if (::listen(sock.get(), 10) == -1) {
 		throw std::system_error(
 			errno,
@@ -94,7 +95,19 @@ void HttpServer::handleClient(Socket client) {
 	char buffer[BUFFER_SIZE];
 	bool headersComplete = false;
 
+	using Clock = std::chrono::steady_clock;
+	auto deadline = Clock::now() + std::chrono::seconds(10);
+
 	while (!headersComplete) {
+		auto remainingTime = deadline - Clock::now();
+		if (remainingTime <= std::chrono::steady_clock::duration::zero()) {
+			std::cerr << "Polling deadline exceeded\n";
+			return;
+		}
+		auto timeoutMs =
+			std::chrono::ceil<std::chrono::milliseconds>
+			(remainingTime).count();
+
 		if (request.size() >= MAX_HEADER_SIZE) {
 			std::cerr << "Request headers too large\n";
 			return;
@@ -102,6 +115,33 @@ void HttpServer::handleClient(Socket client) {
 
 		size_t remaining = MAX_HEADER_SIZE - request.size();
 		size_t bytesToRead = std::min(sizeof(buffer), remaining);
+
+		pollfd pfd{};
+		pfd.fd = client.get();
+		pfd.events = POLLIN;
+
+		int result = ::poll(&pfd, 1, timeoutMs);
+
+		if (result == -1) {
+			if (errno == EINTR) continue;
+			std::cerr << "poll: " << strerror(errno) << '\n';
+			return;
+		}
+		if (result == 0) {
+			std::cerr << "poll: deadline exceeded\n";
+			return;
+		}
+		if (pfd.revents & POLLNVAL) {
+			std::cerr << "poll: invalid fd\n";
+			return;
+		}
+		if (pfd.revents & POLLERR) {
+			std::cerr << "poll: socket error\n";
+			return;
+		}
+		if (!(pfd.revents & (POLLIN | POLLHUP))) {
+			continue;
+		}
 
 		ssize_t received = ::recv(
 			client.get(),
