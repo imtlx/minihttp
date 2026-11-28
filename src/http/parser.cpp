@@ -6,7 +6,8 @@
 
 namespace http::parser {
 
-std::optional<http::request::RequestLine> parseRequestLine(std::string_view line) {
+std::optional<http::request::RequestLine>
+parseRequestLine(std::string_view line) {
 	if (!line.empty() && line.back() == '\n')
 		line.remove_suffix(1);
 	if (!line.empty() && line.back() == '\r')
@@ -31,7 +32,7 @@ std::optional<http::request::RequestLine> parseRequestLine(std::string_view line
 	const auto target = line.substr(firstSpace + 1, secondSpace - firstSpace - 1);
 	const auto version = line.substr(secondSpace + 1);
 
-	constexpr std::string_view separators = "()<>@,;:\\\"/[]?={} \t";
+	constexpr std::string_view separators = "()<>@,;:\\\"/[]?={}";
 	for (unsigned char c : method) {
 		if (c <= 32 || c >= 127 ||
 		    separators.find(static_cast<char>(c)) != std::string_view::npos)
@@ -43,14 +44,30 @@ std::optional<http::request::RequestLine> parseRequestLine(std::string_view line
 			return std::nullopt;
 	}
 
-	if (version != "HTTP/1.0" && version != "HTTP/1.1")
+	const auto parsedVersion = parseVersion(version);
+	if (!parsedVersion)
 		return std::nullopt;
 
-	return {
+	return http::request::RequestLine {
 		http::request::parseMethod(method),
 		std::string(target),
-		std::string(version)
+		*parsedVersion
 	};
+}
+
+std::optional<http::request::RequestVersion>
+parseVersion(std::string_view version) {
+	if (version.size() != 8 ||
+	    !version.starts_with("HTTP/") ||
+	    version[6] != '.' ||
+	    version[5] < '0' || version[5] > '9' ||
+	    version[7] < '0' || version[7] > '9')
+		return std::nullopt;
+
+	return http::request::RequestVersion {
+		static_cast<unsigned short>(version[5] - '0'),
+		static_cast<unsigned short>(version[7] - '0')
+	}
 }
 
 } // namespace http::parser

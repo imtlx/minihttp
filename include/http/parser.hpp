@@ -10,6 +10,7 @@
 namespace http::parser {
 
 std::optional<http::request::RequestLine> parseRequestLine(std::string_view line);
+std::optional<http::request::RequestVersion> parseVersion(std::string_view version);
 
 // namespace http::parser
 

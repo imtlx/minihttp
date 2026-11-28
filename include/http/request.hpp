@@ -20,10 +20,22 @@ enum class RequestMethod {
 	PATCH
 };
 
+struct RequestVersion {
+	unsigned short major;
+	unsigned short minor;
+
+	constexpr bool operator==(const RequestVersion& other) const noexcept {
+		return major == other.major && minor == other.minor;
+	}
+	constexpr bool operator!=(const RequestVersion& other) const noexcept {
+		return !(*this == other);
+	}
+};
+
 struct RequestLine {
 	RequestMethod method;
 	std::string target;
-	std::string version;
+	RequestVersion version;
 };
 
 struct Request {
